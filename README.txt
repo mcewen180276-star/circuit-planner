@@ -11,3 +11,7 @@ TO PUBLISH ON GITHUB PAGES:
 IMPORTANT: Keep all files together. Saved classes and custom exercises live in this browser's local storage; export a JSON backup regularly. Import it on another device to move your data. Online exercise discovery opens web searches for review and manual entry; it does not automatically scrape third-party sites.
 
 Timer: Keep screen awake during class where possible. Backgrounded mobile browsers can suspend timers or audio. The timer uses elapsed real time to correct drift while active.
+
+V2 adds equipment and named exercise discovery, catalogue imports and guided web review.
+
+V3: Search equipment or exercise names against the bundled catalogue, select multiple matches and bulk-import without duplicates. Web searches open external results for review; arbitrary web extraction is not supported.
