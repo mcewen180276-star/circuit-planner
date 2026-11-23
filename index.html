@@ -412,11 +412,13 @@ $('format').addEventListener('change',manualRefresh);
 
 function renderVisualMatches(){
  const q=$('visualSearch').value.trim().toLowerCase(),eq=$('visualEquipment').value,available=stock();
- const results=db.filter(x=>(!eq||x.equipment===eq)&&!hiddenEquipment.includes(x.equipment)&&available[x.equipment]>0&&[x.name,x.muscles,x.equipment,x.type].join(' ').toLowerCase().includes(q)).slice(0,35);
- $('visualMatches').innerHTML=results.map(x=>`<div class="visual-result"><img class="visual-thumb" style="width:50px;height:42px" src="${thumb(x)}" alt=""><span><b>${esc(x.name)}</b><small class="muted" style="display:block">${esc(x.equipment)} · ${esc(x.muscles||x.type)}</small></span><button type="button" data-vpick="${esc(x.id)}">Choose</button></div>`).join('')||'<p>No matching available exercises. Try another search or enable the required equipment.</p>';
- $('visualMatches').querySelectorAll('[data-vpick]').forEach(b=>b.onclick=()=>{const x=db.find(z=>String(z.id)===b.dataset.vpick);if(!x||visualSwapIndex<0||!plan[visualSwapIndex])return;const old=plan[visualSwapIndex];replaceGroupExercise(visualSwapIndex,visualSwapSlot,x);$('visualSwap').classList.add('hidden');renderPlan()});
+ // Swap is a database browser, not a generator: do not hide exercises just because stock is zero.
+ const results=db.filter(x=>(!eq||x.equipment===eq)&&[x.name,x.muscles,x.equipment,x.type].join(' ').toLowerCase().includes(q));
+ const shown=results.slice(0,200);
+ $('visualMatches').innerHTML=(results.length>200?`<p class="muted">Showing the first 200 of ${results.length} exercises. Type a name to narrow the list.</p>`:'')+shown.map(x=>`<div class="visual-result"><img class="visual-thumb" style="width:50px;height:42px" src="${thumb(x)}" alt=""><span><b>${esc(x.name)}</b><small class="muted" style="display:block">${esc(x.equipment)} · ${esc(x.muscles||x.type)}${(available[x.equipment]||0)<=0?' · Not in selected equipment':''}</small></span><button type="button" data-vpick="${esc(x.id)}">Choose</button></div>`).join('')||'<p>No matching exercises in the database. Try a different equipment category or search term.</p>';
+ $('visualMatches').querySelectorAll('[data-vpick]').forEach(b=>b.onclick=()=>{const x=db.find(z=>String(z.id)===b.dataset.vpick);if(!x||visualSwapIndex<0||!plan[visualSwapIndex])return;replaceGroupExercise(visualSwapIndex,visualSwapSlot,x);$('visualSwap').classList.add('hidden');renderPlan()});
 }
-function refreshVisualEquipment(){const previous=$('visualEquipment').value;$('visualEquipment').innerHTML='<option value="">All available equipment</option>'+equipment.filter(x=>!hiddenEquipment.includes(x)).map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');if(equipment.includes(previous)&&!hiddenEquipment.includes(previous))$('visualEquipment').value=previous}
+function refreshVisualEquipment(){const previous=$('visualEquipment').value;$('visualEquipment').innerHTML='<option value="">All equipment (entire database)</option>'+equipment.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');if(equipment.includes(previous))$('visualEquipment').value=previous}
 document.body.appendChild($('visualSwap'));refreshVisualEquipment();$('visualSearch').oninput=renderVisualMatches;$('visualEquipment').onchange=renderVisualMatches;
 $('visualClose').onclick=()=>$('visualSwap').classList.add('hidden');
 $('visualSwap').addEventListener('click',e=>{if(e.target===$('visualSwap'))$('visualSwap').classList.add('hidden')});
