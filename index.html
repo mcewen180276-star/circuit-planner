@@ -266,39 +266,46 @@ window.CircuitAIBridge={
 };
 // Calculate class timings from user-supplied constraints, without overwriting entered values.
 function resolveCircuitTiming(){
- const val=id=>{const raw=$(id).value.trim();return raw===''?null:Number(raw)};
- const minutes=val('length')||45, total=Math.round(minutes*60);
- // Allow for a practical warm-up, cooldown and station/round transitions.
+ const read=id=>{const raw=$(id).value.trim();return raw===''?null:Number(raw)};
+ const minutes=read('length')??45;
+ if(!Number.isFinite(minutes)||minutes<5)throw Error('Enter a class length of at least 5 minutes.');
  const warmup=Math.min(8,Math.max(3,Math.round(minutes*.12)));
  const cooldown=Math.min(6,Math.max(3,Math.round(minutes*.10)));
- const buffer=Math.max(0,Math.min(180,total-(warmup+cooldown)*60-120));
- const available=Math.max(60,total-(warmup+cooldown)*60-buffer);
- let n=val('stations'), rounds=val('rounds'),work=val('work'),rest=val('rest');
+ const transition=Math.min(180,Math.max(0,Math.round(minutes*60*.05)));
+ const available=Math.max(60,Math.round(minutes*60)-(warmup+cooldown)*60-transition);
+ let n=read('stations'),rounds=read('rounds'),work=read('work'),rest=read('rest');
  if(n!==null&&(!Number.isInteger(n)||n<1||n>40))throw Error('Stations must be between 1 and 40.');
  if(rounds!==null&&(!Number.isInteger(rounds)||rounds<1||rounds>30))throw Error('Rounds must be between 1 and 30.');
  if(work!==null&&(!Number.isFinite(work)||work<10))throw Error('Work must be at least 10 seconds.');
  if(rest!==null&&(!Number.isFinite(rest)||rest<0))throw Error('Rest cannot be negative.');
- rest ??= 15;
- if(n===null&&rounds!==null&&work!==null)n=Math.max(1,Math.min(40,Math.floor(available/(rounds*(work+rest)))));
- n ??= 8;
- if(rounds===null&&work!==null)rounds=Math.max(1,Math.min(30,Math.floor(available/(n*(work+rest)))));
- rounds ??= 3;
- if(work===null)work=Math.max(10,Math.floor(available/(n*rounds)-rest));
- const actual=n*rounds*(work+rest), gap=available-actual;
- const message=gap<0?'⚠ Timings exceed the available training time by '+Math.ceil(-gap/60)+' min. Change a value or leave work/rounds blank to calculate.':'Estimated circuit '+Math.floor(actual/60)+'m '+actual%60+'s, plus '+warmup+'m warm-up, '+cooldown+'m cooldown and transition time.';
- return {stations:n,rounds,work,rest,minutes,warmup,cooldown,available,actual,message,over:gap<0};
+ const auto=[];
+ // Work backwards from the fields the instructor actually entered.
+ // Defaults are estimates ONLY; never copy them into the input boxes.
+ if(rest===null){rest=15;auto.push('rest')}
+ if(n===null){
+   if(rounds!==null&&work!==null){n=Math.max(1,Math.min(40,Math.floor(available/(rounds*(work+rest)))))}
+   else if(work!==null){n=Math.max(1,Math.min(40,Math.floor(available/(3*(work+rest)))))}
+   else {n=Math.max(4,Math.min(16,Math.round(minutes/4.5)))}
+   auto.push('stations');
+ }
+ if(rounds===null){
+   if(work!==null)rounds=Math.max(1,Math.min(30,Math.floor(available/(n*(work+rest)))));
+   else rounds=Math.max(1,Math.min(5,Math.round(available/(n*75))));
+   auto.push('rounds');
+ }
+ if(work===null){work=Math.max(10,Math.floor(available/(n*rounds)-rest));auto.push('work')}
+ const actual=n*rounds*(work+rest),gap=available-actual;
+ const over=gap<0;
+ const message=over?'⚠ Your selected timings exceed the available circuit time by '+Math.ceil(-gap/60)+' min. Adjust an entered value or the class length.':'Circuit '+Math.floor(actual/60)+'m '+actual%60+'s; warm-up '+warmup+'m, cooldown '+cooldown+'m, transition allowance '+Math.ceil(transition/60)+'m.';
+ return {stations:n,rounds,work,rest,minutes,warmup,cooldown,transition,available,actual,message,over,auto};
 }
 window.CircuitTiming={resolve:resolveCircuitTiming};
-function showCircuitTiming(){try{const t=resolveCircuitTiming();$('timingEstimate').textContent=t.message+' Calculated: '+t.stations+' stations × '+t.rounds+' rounds, '+t.work+'s work / '+t.rest+'s rest.';$('timingEstimate').style.color=t.over?'#a12727':'#175348'}catch(e){$('timingEstimate').textContent=e.message;$('timingEstimate').style.color='#a12727'}}
+function showCircuitTiming(){try{const t=resolveCircuitTiming();$('timingEstimate').textContent=t.message+' Plan: '+t.stations+' stations × '+t.rounds+' rounds, '+t.work+'s work / '+t.rest+'s rest.'+(t.auto.length?' Calculated: '+t.auto.join(', ')+'.':' All timing fields set manually.');$('timingEstimate').style.color=t.over?'#a12727':'#175348'}catch(e){$('timingEstimate').textContent=e.message;$('timingEstimate').style.color='#a12727'}}
 ['stations','rounds','work','rest','length'].forEach(id=>$(id).addEventListener('input',showCircuitTiming));
 setTimeout(showCircuitTiming,0);
-function applyCircuitTiming(){const t=resolveCircuitTiming();if(t.over&&!confirm(t.message+' Generate anyway?'))return null;
- ['stations','rounds','work','rest'].forEach(id=>{if($(id).value.trim()==='')$(id).value=t[id]});
- showCircuitTiming();return t;
-}
 $('generate').onclick=()=>{
- let timing;try{timing=applyCircuitTiming();if(!timing)return;}catch(e){alert(e.message);return;}
- const n=Math.max(1,Math.min(40,+$('stations').value||8)),st=stock(),people=+$('people').value||12,g=groupSize(),perStation=Math.ceil(people/n);
+ let timing;try{timing=resolveCircuitTiming();if(timing.over&&!confirm(timing.message+' Generate anyway?'))return;}catch(e){alert(e.message);return;}
+ const n=timing.stations,st=stock(),people=+$('people').value||12,g=groupSize(),perStation=Math.ceil(people/n);
  const eligible=db.filter(x=>match(x)&&st[x.equipment]>0);
  const chosen=[],used=new Set();let ptr=0;
  for(let i=0;i<n;i++){
@@ -308,10 +315,14 @@ $('generate').onclick=()=>{
    if(!choices.length)break;
    const x=choices[ptr%choices.length];ptr++;used.add(x.name.toLowerCase().replace(/\s*\([^)]*\)/g,''));usedEquipment[x.equipment]=(usedEquipment[x.equipment]||0)+1;exercises.push(x);
   }
-  if(!exercises.length)break;
-  chosen.push({...exercises[0],extras:exercises.slice(1),work:+$('work').value||45,rest:Math.max(0,+$('rest').value||0)});
+  if(!exercises.length){
+    chosen.push({id:'manual-auto-'+i,name:'Blank station — enter exercise',equipment:'Bodyweight',type:'Custom',muscles:'Custom',desc:'Add your own activity or change equipment selection',url:'',freeTextStation:true,extras:[],work:timing.work,rest:timing.rest});
+    continue;
+  }
+  chosen.push({...exercises[0],extras:exercises.slice(1),work:timing.work,rest:timing.rest});
  }
- plan=chosen;renderPlan();$('status').textContent=plan.length+' stations generated. '+(g>1?g+' exercises per station requested. ':'')+'Review equipment availability and class suitability.'+(chosen.some(x=>stationExercises(x).length<g)?' Some stations have fewer exercises because available equipment or unique exercises were insufficient.':'');
+ plan=chosen;renderPlan();
+ $('status').textContent=plan.length+' stations generated, '+timing.rounds+' rounds, '+timing.work+'s work / '+timing.rest+'s rest. '+(timing.auto.length?'Calculated: '+timing.auto.join(', ')+'. ':'')+(chosen.some(x=>x.freeTextStation)?'Some blank stations were included because the selected equipment/exercises could not fill them. ':'')+'Your entered fields have not been changed.';
 };
 $('search').oninput=renderLibrary;$('eqFilter').onchange=renderLibrary;$('typeFilter').onchange=renderLibrary;$('clear').onclick=()=>{if(confirm('Clear plan?')){plan=[];renderPlan()}};function print(cheat){document.body.classList.toggle('cheat',cheat);window.print();setTimeout(()=>document.body.classList.remove('cheat'),500)}$('printDetail').onclick=()=>print(false);$('printCheat').onclick=()=>print(true);
 function syncClassName(source){const value=source.value;if(source===$('name'))$('saveClassName').value=value;else $('name').value=value;}
